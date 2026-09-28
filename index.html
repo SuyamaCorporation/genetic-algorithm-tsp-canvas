@@ -1,0 +1,383 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>遺伝的アルゴリズム TSP 可視化</title>
+<script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-900 text-gray-100 min-h-screen">
+
+<div class="max-w-4xl mx-auto p-4">
+  <h1 class="text-3xl font-bold text-center text-indigo-400 mb-1">遺伝的アルゴリズム — TSP 可視化</h1>
+  <p class="text-center text-gray-400 text-sm mb-4">巡回セールスマン問題を遺伝的アルゴリズムで解く過程を可視化</p>
+
+  <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+    <!-- コントロール -->
+    <div class="bg-gray-800 rounded-xl p-4 space-y-3">
+      <div>
+        <label class="text-sm text-gray-300">都市数</label>
+        <select id="city-count" class="w-full bg-gray-700 rounded px-2 py-1 text-sm mt-1">
+          <option value="10">10都市</option>
+          <option value="15" selected>15都市</option>
+          <option value="20">20都市</option>
+          <option value="25">25都市</option>
+        </select>
+      </div>
+
+      <div>
+        <label class="text-sm text-gray-300">集団サイズ: <span id="pop-val" class="text-cyan-300">50</span></label>
+        <input type="range" id="pop-size" min="20" max="200" value="50" class="w-full" oninput="document.getElementById('pop-val').textContent=this.value">
+      </div>
+
+      <div>
+        <label class="text-sm text-gray-300">突然変異率: <span id="mut-val" class="text-yellow-300">5%</span></label>
+        <input type="range" id="mutation-rate" min="1" max="30" value="5" class="w-full" oninput="document.getElementById('mut-val').textContent=this.value+'%'">
+      </div>
+
+      <div>
+        <label class="text-sm text-gray-300">交叉方式</label>
+        <select id="crossover-type" class="w-full bg-gray-700 rounded px-2 py-1 text-sm mt-1">
+          <option value="ox">順序交叉（OX）</option>
+          <option value="pmx">部分対応交叉（PMX）</option>
+        </select>
+      </div>
+
+      <div>
+        <label class="text-sm text-gray-300">選択方式</label>
+        <select id="selection-type" class="w-full bg-gray-700 rounded px-2 py-1 text-sm mt-1">
+          <option value="tournament">トーナメント選択</option>
+          <option value="roulette">ルーレット選択</option>
+        </select>
+      </div>
+
+      <div class="space-y-2">
+        <button onclick="newProblem()" class="w-full bg-indigo-600 hover:bg-indigo-500 py-2 rounded-lg text-sm font-bold">新しい問題</button>
+        <button onclick="startGA()" id="start-btn" class="w-full bg-green-600 hover:bg-green-500 py-2 rounded-lg text-sm font-bold">GA スタート</button>
+        <button onclick="stopGA()" class="w-full bg-red-700 hover:bg-red-600 py-2 rounded-lg text-sm">停止</button>
+        <button onclick="stepGA()" class="w-full bg-gray-600 hover:bg-gray-500 py-2 rounded-lg text-sm">1世代進める</button>
+      </div>
+
+      <div class="bg-gray-700 rounded-lg p-3 text-xs space-y-1">
+        <div class="text-indigo-400 font-bold">現在の状況</div>
+        <div>世代: <span id="gen-count" class="text-cyan-300 font-bold">0</span></div>
+        <div>最良距離: <span id="best-dist" class="text-green-300 font-bold">-</span></div>
+        <div>現世代最良: <span id="cur-dist" class="text-yellow-300">-</span></div>
+        <div>改善なし世代: <span id="stagnant" class="text-red-300">0</span></div>
+      </div>
+    </div>
+
+    <!-- ルートCanvas -->
+    <div class="bg-gray-800 rounded-xl p-3">
+      <div class="text-xs text-indigo-400 font-bold mb-1">現在の最良ルート</div>
+      <canvas id="route-canvas" width="350" height="350" class="w-full border border-gray-700 rounded-lg bg-gray-950"></canvas>
+    </div>
+
+    <!-- 適応度グラフ -->
+    <div class="bg-gray-800 rounded-xl p-3">
+      <div class="text-xs text-green-400 font-bold mb-1">適応度の変化</div>
+      <canvas id="fitness-canvas" width="350" height="200" class="w-full border border-gray-700 rounded-lg"></canvas>
+      <div class="text-xs text-violet-400 font-bold mt-2 mb-1">世代別最良/平均距離</div>
+      <canvas id="avg-canvas" width="350" height="130" class="w-full border border-gray-700 rounded-lg"></canvas>
+    </div>
+  </div>
+
+  <!-- 解説 -->
+  <div class="mt-4 bg-gray-800 rounded-xl p-4">
+    <div class="text-sm font-bold text-indigo-400 mb-2">遺伝的アルゴリズム（GA）の流れ</div>
+    <div class="grid grid-cols-2 md:grid-cols-4 gap-3 text-xs text-gray-300">
+      <div class="bg-gray-700 rounded p-2"><div class="text-cyan-300 font-bold">① 初期化</div>ランダムなルート（個体）の集団を生成</div>
+      <div class="bg-gray-700 rounded p-2"><div class="text-yellow-300 font-bold">② 選択</div>適応度（距離の短さ）に基づいて親を選択</div>
+      <div class="bg-gray-700 rounded p-2"><div class="text-green-300 font-bold">③ 交叉</div>2つの親からルートの部分を交換して子を生成</div>
+      <div class="bg-gray-700 rounded p-2"><div class="text-violet-300 font-bold">④ 突然変異</div>確率的にルートの一部を変換して多様性維持</div>
+    </div>
+  </div>
+</div>
+
+<script>
+function escapeHtml(str){return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#039;');}
+
+let cities = [];
+let population = [];
+let bestRoute = null;
+let bestDist = Infinity;
+let generation = 0;
+let stagnant = 0;
+let running = false;
+let animId = null;
+let fitnessHistory = [];
+let avgHistory = [];
+
+function dist(a, b) {
+  return Math.sqrt((a.x-b.x)**2 + (a.y-b.y)**2);
+}
+
+function routeDistance(route) {
+  let d = 0;
+  for(let i=0;i<route.length;i++) d += dist(cities[route[i]], cities[route[(i+1)%route.length]]);
+  return d;
+}
+
+function newProblem() {
+  stopGA();
+  const n = parseInt(document.getElementById('city-count').value);
+  cities = [];
+  for(let i=0;i<n;i++) {
+    cities.push({x: 20+Math.random()*310, y: 20+Math.random()*310});
+  }
+  bestRoute = null; bestDist = Infinity; generation = 0; stagnant = 0;
+  fitnessHistory = []; avgHistory = [];
+  population = [];
+  document.getElementById('gen-count').textContent = 0;
+  document.getElementById('best-dist').textContent = '-';
+  document.getElementById('cur-dist').textContent = '-';
+  document.getElementById('stagnant').textContent = 0;
+  drawRoute(null);
+  drawFitness();
+}
+
+function initPopulation() {
+  const popSize = parseInt(document.getElementById('pop-size').value);
+  const n = cities.length;
+  population = [];
+  for(let i=0;i<popSize;i++) {
+    const route = Array.from({length:n},(_,j)=>j);
+    // Fisher-Yates
+    for(let k=n-1;k>0;k--) {
+      const j=Math.floor(Math.random()*(k+1));
+      [route[k],route[j]]=[route[j],route[k]];
+    }
+    population.push(route);
+  }
+  bestDist = Infinity;
+  population.forEach(r => {
+    const d = routeDistance(r);
+    if(d < bestDist) { bestDist = d; bestRoute = [...r]; }
+  });
+}
+
+// Order Crossover (OX)
+function oxCrossover(p1, p2) {
+  const n = p1.length;
+  const a = Math.floor(Math.random()*n);
+  const b = a + Math.floor(Math.random()*(n-a));
+  const child = new Array(n).fill(-1);
+  for(let i=a;i<=b;i++) child[i] = p1[i];
+  let pos = (b+1)%n;
+  for(let k=0;k<n;k++) {
+    const gene = p2[(b+1+k)%n];
+    if(!child.includes(gene)) {
+      child[pos] = gene;
+      pos = (pos+1)%n;
+    }
+  }
+  return child;
+}
+
+// PMX Crossover
+function pmxCrossover(p1, p2) {
+  const n = p1.length;
+  const a = Math.floor(Math.random()*n);
+  const b = a + Math.floor(Math.random()*(n-a));
+  const child = [...p1];
+  for(let i=a;i<=b;i++) {
+    const v1=child[i], v2=p2[i];
+    const idx1=child.indexOf(v2);
+    [child[i],child[idx1]]=[child[idx1],child[i]];
+  }
+  return child;
+}
+
+function mutate(route, mutRate) {
+  const r = [...route];
+  if(Math.random() < mutRate) {
+    // 2点スワップ
+    const a=Math.floor(Math.random()*r.length);
+    const b=Math.floor(Math.random()*r.length);
+    [r[a],r[b]]=[r[b],r[a]];
+  }
+  return r;
+}
+
+function tournamentSelect(pop, k=3) {
+  let best = null, bestD = Infinity;
+  for(let i=0;i<k;i++) {
+    const idx = Math.floor(Math.random()*pop.length);
+    const d = routeDistance(pop[idx]);
+    if(d < bestD) { bestD=d; best=pop[idx]; }
+  }
+  return best;
+}
+
+function rouletteSelect(pop, fitnesses) {
+  const total = fitnesses.reduce((a,b)=>a+b, 0);
+  let r = Math.random()*total, cum=0;
+  for(let i=0;i<pop.length;i++) {
+    cum += fitnesses[i];
+    if(cum >= r) return pop[i];
+  }
+  return pop[0];
+}
+
+function evolve() {
+  const mutRate = parseInt(document.getElementById('mutation-rate').value)/100;
+  const crossType = document.getElementById('crossover-type').value;
+  const selType = document.getElementById('selection-type').value;
+  const popSize = population.length;
+
+  let fitnesses = null;
+  if(selType === 'roulette') {
+    const dists = population.map(routeDistance);
+    const maxD = Math.max(...dists);
+    fitnesses = dists.map(d => maxD - d + 1);
+  }
+
+  const newPop = [];
+  // エリート保存
+  if(bestRoute) newPop.push([...bestRoute]);
+
+  while(newPop.length < popSize) {
+    let p1, p2;
+    if(selType === 'tournament') {
+      p1 = tournamentSelect(population);
+      p2 = tournamentSelect(population);
+    } else {
+      p1 = rouletteSelect(population, fitnesses);
+      p2 = rouletteSelect(population, fitnesses);
+    }
+    const child = crossType === 'ox' ? oxCrossover(p1,p2) : pmxCrossover(p1,p2);
+    newPop.push(mutate(child, mutRate));
+  }
+  population = newPop;
+
+  let curBest = Infinity;
+  let curAvg = 0;
+  population.forEach(r => {
+    const d = routeDistance(r);
+    curAvg += d;
+    if(d < curBest) curBest = d;
+    if(d < bestDist) { bestDist = d; bestRoute = [...r]; stagnant = 0; }
+  });
+  curAvg /= population.length;
+
+  fitnessHistory.push(curBest);
+  avgHistory.push(curAvg);
+  if(fitnessHistory.length > 2 && fitnessHistory[fitnessHistory.length-1] >= fitnessHistory[fitnessHistory.length-2]-0.01) {
+    stagnant++;
+  }
+
+  generation++;
+  document.getElementById('gen-count').textContent = generation;
+  document.getElementById('best-dist').textContent = bestDist.toFixed(1);
+  document.getElementById('cur-dist').textContent = curBest.toFixed(1);
+  document.getElementById('stagnant').textContent = stagnant;
+}
+
+function startGA() {
+  if(running) return;
+  if(cities.length === 0) newProblem();
+  if(population.length === 0) initPopulation();
+  running = true;
+
+  function frame() {
+    if(!running) return;
+    for(let i=0;i<3;i++) evolve(); // 3世代/フレーム
+    drawRoute(bestRoute);
+    drawFitness();
+    animId = setTimeout(()=>requestAnimationFrame(frame), 20);
+  }
+  frame();
+}
+
+function stopGA() {
+  running = false;
+  if(animId) clearTimeout(animId);
+}
+
+function stepGA() {
+  if(cities.length === 0) newProblem();
+  if(population.length === 0) initPopulation();
+  evolve();
+  drawRoute(bestRoute);
+  drawFitness();
+}
+
+function drawRoute(route) {
+  const canvas = document.getElementById('route-canvas');
+  const ctx = canvas.getContext('2d');
+  const W=canvas.width, H=canvas.height;
+  ctx.fillStyle='#030712'; ctx.fillRect(0,0,W,H);
+
+  if(route) {
+    // ルート線
+    ctx.strokeStyle='#6366f1'; ctx.lineWidth=2;
+    ctx.shadowColor='#818cf8'; ctx.shadowBlur=6;
+    ctx.beginPath();
+    for(let i=0;i<=route.length;i++) {
+      const c = cities[route[i%route.length]];
+      i===0 ? ctx.moveTo(c.x,c.y) : ctx.lineTo(c.x,c.y);
+    }
+    ctx.stroke();
+    ctx.shadowBlur=0;
+  }
+
+  // 都市
+  cities.forEach((c,i) => {
+    ctx.fillStyle = '#f59e0b';
+    ctx.shadowColor='#fbbf24'; ctx.shadowBlur=8;
+    ctx.beginPath(); ctx.arc(c.x,c.y,5,0,Math.PI*2); ctx.fill();
+    ctx.shadowBlur=0;
+    ctx.fillStyle='#e5e7eb'; ctx.font='10px sans-serif';
+    ctx.fillText(i, c.x+7, c.y+4);
+  });
+}
+
+function drawFitness() {
+  const canvas = document.getElementById('fitness-canvas');
+  const ctx = canvas.getContext('2d');
+  const W=canvas.width, H=canvas.height;
+  ctx.fillStyle='#0f172a'; ctx.fillRect(0,0,W,H);
+
+  if(fitnessHistory.length < 2) return;
+  const margin=30;
+  const plotW=W-margin*2, plotH=H-margin*2;
+  const minV=Math.min(...fitnessHistory)*0.95;
+  const maxV=Math.max(...fitnessHistory)*1.05;
+
+  // 軸
+  ctx.strokeStyle='#374151'; ctx.lineWidth=1;
+  ctx.beginPath(); ctx.moveTo(margin,margin); ctx.lineTo(margin,H-margin); ctx.lineTo(W-margin,H-margin); ctx.stroke();
+
+  // 最良距離曲線
+  ctx.strokeStyle='#22c55e'; ctx.lineWidth=2;
+  ctx.beginPath();
+  fitnessHistory.forEach((v,i) => {
+    const x = margin + (i/Math.max(fitnessHistory.length-1,1))*plotW;
+    const y = H-margin - ((v-minV)/(maxV-minV))*plotH;
+    i===0 ? ctx.moveTo(x,y) : ctx.lineTo(x,y);
+  });
+  ctx.stroke();
+
+  // 平均距離曲線
+  if(avgHistory.length > 1) {
+    ctx.strokeStyle='#a78bfa'; ctx.lineWidth=1; ctx.setLineDash([3,3]);
+    ctx.beginPath();
+    avgHistory.forEach((v,i) => {
+      const x = margin + (i/Math.max(avgHistory.length-1,1))*plotW;
+      const y = H-margin - ((v-minV)/(maxV-minV))*plotH;
+      i===0 ? ctx.moveTo(x,y) : ctx.lineTo(x,y);
+    });
+    ctx.stroke(); ctx.setLineDash([]);
+  }
+
+  ctx.fillStyle='#6b7280'; ctx.font='10px sans-serif';
+  ctx.fillText('世代', W-margin-15, H-5);
+  ctx.fillText(fitnessHistory[fitnessHistory.length-1].toFixed(0), margin+2, margin+12);
+  ctx.fillStyle='#22c55e'; ctx.fillText('最良', margin+3, margin+24);
+  ctx.fillStyle='#a78bfa'; ctx.fillText('平均', margin+35, margin+24);
+}
+
+newProblem();
+</script>
+</body>
+</html>
